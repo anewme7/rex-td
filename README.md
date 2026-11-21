@@ -18,7 +18,7 @@ The comparison uses fictional pane names, tasks, hosts, and usage figures in an 
 
 ## Install and open the sidebar
 
-Download the archive for your platform and its `.sha256` file. The published package is **v0.0.1**. Build from `main` to use the [latest source changes](#try-from-a-source-checkout), including the `td` palette actions and **Mark seen**. [GitHub Releases](https://github.com/anewme7/rextd/releases)
+Download the archive for your platform and its `.sha256` file. The current release is **v0.0.1**. [GitHub Releases](https://github.com/anewme7/rextd/releases)
 
 The current packages start in English. Press Shift+L in the sidebar to switch to Simplified Chinese.
 
@@ -90,7 +90,7 @@ Click a task's checkbox or press `x` to mark it done or reopen it. Press `m` to 
 
 In pane details, press `m` for session metadata or Enter to jump. For provider setup, see [Agent session details](#agent-session-details).
 
-On builds from `main`, press `y` or click **Mark seen** to clear a reviewed completion from Attention. Press `a` in Attention to show all panes, then open the pane again to undo the mark. New activity can bring the reminder back. Approvals and task checkboxes are independent of seen marks.
+Press `y` or click **Mark seen** to clear a reviewed completion from Attention. Press `a` in Attention to show all panes, then open the pane again to undo the mark. New activity can bring the reminder back. Approvals and task checkboxes are independent of seen marks.
 
 ### Review suggested tasks
 
@@ -102,7 +102,7 @@ In **Tasks**, select **Candidates** below the task list and press Enter to expan
 
 - **Groups** organize Attention by Session, Agent, or Host. Press `v` to switch. Host view nests sessions under each host. Press `c` to fold or open the current group, or Shift+C for the whole host. The Tasks tab keeps tasks at the top level, with linked sessions inside each task. Pinned items appear first.
 - **Mouse and touch** can switch tabs, change grouping or alert scope, fold group headers, select a row, expand a task by its arrow, and use the bottom shortcuts. Use the scroll wheel to move through list rows. Touch requires a Rex client that forwards taps as terminal mouse events.
-- **Resources** shows numbered hosts, CPU percentages, and the count of panes needing attention. Each provider shows its next reset and the used percentage for each quota window. A dash marks an unavailable reading. Click the resources prompt or press `f` to open that section. The host details also show session and window counts. On `main`, resource sampling stops when you close this section. Press Esc to return to the list.
+- **Resources** shows numbered hosts, CPU percentages, and the count of panes needing attention. Each provider shows its next reset and the used percentage for each quota window. A dash marks an unavailable reading. Click the resources prompt or press `f` to open that section. The host details also show session and window counts. Resource sampling stops when you close this section. Press Esc to return to the list.
 
 | Key | Action |
 | --- | --- |
@@ -114,7 +114,7 @@ In **Tasks**, select **Candidates** below the task list and press Enter to expan
 | Right / `o` | Expand a task or open an expanded task's details / open details directly |
 | Enter | Jump to a linked pane or choose one from task details |
 | `x` / `m` | Mark a task done or reopen it / open the task menu |
-| `y` | Mark a completed pane result as seen or undo the mark (builds from `main`) |
+| `y` | Mark a completed pane result as seen or undo the mark |
 | `/` / Shift+A | Search tasks / open the archive |
 | `l` | Pick a pane from task details, or link or unlink the highlighted pane in Attention |
 | Shift+L | Switch between English and Simplified Chinese in the bilingual build |
@@ -143,13 +143,13 @@ Task pins stay in the task database. Attention pins last for the current sidebar
 
 Copy the block from [rex/init.example.lua](rex/init.example.lua) into your Rex `init.lua`. Set `rextd_root` to the absolute path of the extracted directory containing the `rextd` binary and the `rex/` folder. Run `rex config check` and `rex config reload` on that Rex server.
 
-On macOS, open the Rex command palette with **Shift+Command+P**. Search for **td** with a build from `main`, or **rextd** with the v0.0.1 download.
+On macOS, open the Rex command palette with **Shift+Command+P**. Search for **td** to find the rextd actions.
 
 - **Open Task Board** opens a sidebar beside your current pane or focuses the existing one.
-- **Find Task** finds an active task and jumps to a linked pane. On `main`, the picker shows the host, agent, and status for multiple links. If the pane is unavailable, Find Task opens the task with its links and next step.
+- **Find Task** finds an active task and jumps to a linked pane. The picker shows the host, agent, and status for multiple links. If the pane is unavailable, Find Task opens the task with its links and next step.
 - **Capture Current Pane** creates a task from the current pane or links it to an existing task.
 
-With a build from `main`, use **Open Task Board** to return to the selected task after a jump. To jump across hosts, connect your Rex app to both hosts, give the client a unique label, and enable Rex Remote Control for tab switches.
+Use **Open Task Board** to return to the selected task after a jump. To jump across hosts, connect your Rex app to both hosts, give the client a unique label, and enable Rex Remote Control for tab switches.
 
 **Show Host 1** filters Attention in a rextd pane in the current window. Inside the sidebar, Alt+1 through Alt+9 select numbered hosts and Alt+0 shows all hosts.
 
@@ -185,7 +185,7 @@ If a local Claude Code pane reports that its weekly quota is exhausted, rextd us
 
 ## Data, updates, and removal
 
-Tasks, types, colors, pins, results, and pane links are stored in `~/.local/share/rex-td/tasks.sqlite3` by default. An absolute `REX_TD_DATA_DIR` takes priority over `$XDG_DATA_HOME/rex-td`, when set. Demo data lives in memory. CPU readings and live pane events stay out of the task database. A build from `main` stores a fingerprint and timestamp for each acknowledged pane.
+Tasks, types, colors, pins, results, and pane links are stored in `~/.local/share/rex-td/tasks.sqlite3` by default. An absolute `REX_TD_DATA_DIR` takes priority over `$XDG_DATA_HOME/rex-td`, when set. Demo data lives in memory. CPU readings and live pane events stay out of the task database. Seen marks store a fingerprint and timestamp for each acknowledged pane.
 
 The database is local to the machine running rextd. Task notes, results, and linked pane names may contain private information. Use demo mode for shareable screenshots and keep your task database, runtime logs, and personal configuration out of commits and issue attachments.
 

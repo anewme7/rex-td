@@ -27,7 +27,7 @@ To try sample tasks and alerts first, run `./rextd --demo`. The demo uses fictio
 
 Click the checkbox or press `x` to mark a task done or reopen it. Open the task menu with `m` to cancel, archive, reorder, or split work into subtasks. Press Shift+A to see the archive and `/` to search.
 
-You can also open the board, find a task, or capture a pane from the [Rex command palette](../README.md#add-rextd-to-the-rex-command-palette) after loading the bundled actions.
+Load the [bundled Rex actions](../README.md#add-rextd-to-the-rex-command-palette). On macOS, press Shift+Command+P and search for **td** to open the board, find a task, or capture the current pane. After jumping, use **Open Task Board** to return to the selected task.
 
 ## Review suggested tasks
 
@@ -47,10 +47,13 @@ Attention shows approvals, questions, sign-ins, errors, and completed turns that
 | Fold or expand the current group | `c` |
 | Fold or expand a whole host in Host view | Shift+C |
 | Inspect a pane's key events | Right |
+| Mark a completed result as seen or undo the mark | `y` in pane details |
 | Jump to the selected pane | Enter |
 | Peek at status | Space |
 | Pin a task or pane | `p` |
 | See the shortcut list | `?` |
+
+Press `a` in Attention to show all panes and reopen a result you marked as seen. Approvals stay in Attention until Rex reports a change.
 
 Saved task pins persist. Attention pins last until you close the sidebar. For cross-host jumps, connect the Rex app to both servers, give the device a unique Rex client label, and enable Rex Remote Control for tab switches.
 
