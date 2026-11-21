@@ -1,0 +1,6 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "/absolute/path/to/rextd --claude-statusline"
+  }
+}
