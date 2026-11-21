@@ -29,15 +29,28 @@ const (
 
 type Pane struct {
 	ID, Label, Window, App, Status, Message string
-	AgentTitle, TerminalTitle               string
+	AgentTitle, TerminalTitle, ReportID     string
 	SessionID, Session, WindowID            string
 	Host                                    Host
-	Since, ReportedAt                       time.Time
+	Since, ReportedAt, ActivityAt           time.Time
 	Progress                                *int
 }
 
 func (p Pane) NeedsAttention() bool {
 	return p.Status != "" && p.Status != "idle" && p.Status != "working"
+}
+
+func (p Pane) AttentionPriority() int {
+	switch p.Status {
+	case "permission", "question", "auth":
+		return 3
+	case "error", "waiting":
+		return 2
+	case "done":
+		return 1
+	default:
+		return 0
+	}
 }
 
 type Snapshot struct {
@@ -177,6 +190,7 @@ func decodeSnapshot(raw []byte, last []Pane) (Snapshot, bool) {
 	var blocks map[string]struct {
 		Label, Window, Session string
 		TerminalTitle          string `json:"terminal_title"`
+		ActivityAt             string `json:"activity_at"`
 		SessionID              string `json:"session_id"`
 		WindowID               string `json:"window_id"`
 		Records                json.RawMessage
@@ -202,26 +216,8 @@ func decodeSnapshot(raw []byte, last []Pane) (Snapshot, bool) {
 		base := Pane{ID: id, Label: cleaned(block.Label), Window: cleaned(block.Window),
 			TerminalTitle: cleaned(block.TerminalTitle),
 			Session:       cleaned(block.Session), SessionID: block.SessionID, WindowID: block.WindowID}
-		best := base
-		for _, record := range records {
-			status := decodeStatus(record)
-			if status == "" {
-				continue
-			}
-			since, _ := time.Parse(time.RFC3339Nano, record.UpdatedAt)
-			p := base
-			p.App, p.Status = cleaned(first(record.EffectiveApp, record.App)), status
-			p.AgentTitle = cleaned(record.Title)
-			p.Message, p.Since = cleaned(first(record.Msg, record.Message)), since
-			p.ReportedAt = since
-			if record.Progress != nil && *record.Progress >= 0 && *record.Progress <= 100 &&
-				(record.State == "working" || record.State == "blocked") {
-				p.Progress = record.Progress
-			}
-			if best.Status == "" || comparePanes(p, best) < 0 {
-				best = p
-			}
-		}
+		base.ActivityAt, _ = time.Parse(time.RFC3339Nano, block.ActivityAt)
+		best := paneWithStatus(base, records)
 		if best.Status != "" || best.SessionID != "" {
 			if old, ok := byID[id]; ok && old.Status == best.Status && !old.Since.IsZero() {
 				best.Since = old.Since
@@ -231,6 +227,30 @@ func decodeSnapshot(raw []byte, last []Pane) (Snapshot, bool) {
 	}
 	slices.SortFunc(snapshot.Panes, comparePanes)
 	return snapshot, true
+}
+
+func paneWithStatus(base Pane, records []report) Pane {
+	best := base
+	for _, record := range records {
+		status := decodeStatus(record)
+		if status == "" {
+			continue
+		}
+		since, _ := time.Parse(time.RFC3339Nano, record.UpdatedAt)
+		p := base
+		p.App, p.Status = cleaned(first(record.EffectiveApp, record.App)), status
+		p.AgentTitle, p.ReportID = cleaned(record.Title), record.ID
+		p.Message, p.Since = cleaned(first(record.Msg, record.Message)), since
+		p.ReportedAt = since
+		if record.Progress != nil && *record.Progress >= 0 && *record.Progress <= 100 &&
+			(record.State == "working" || record.State == "blocked") {
+			p.Progress = record.Progress
+		}
+		if best.Status == "" || comparePanes(p, best) < 0 {
+			best = p
+		}
+	}
+	return best
 }
 
 func decodeStatus(r report) string {

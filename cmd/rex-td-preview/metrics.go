@@ -11,28 +11,38 @@ import (
 	"rex-td/rex"
 )
 
+const codexQuotaInterval = 5 * time.Minute
+
+type metricEvent struct {
+	feed  *metricFeed
+	value tea.Msg
+}
+
 type cpuUpdate struct {
 	host  string
 	value *int
 }
 type codexUpdate struct {
-	reading quotaReading
-	failed  bool
+	reading      quotaReading
+	failed       bool
+	refreshAfter time.Time
 }
 type claudeUpdate struct{ reading quotaReading }
 
 type metricFeed struct {
 	ctx      context.Context
+	cancel   context.CancelFunc
 	messages chan tea.Msg
-	workers  sync.WaitGroup
+	workers  *sync.WaitGroup
 	remote   map[string]bool
 }
 
-func startMetrics(ctx context.Context) *metricFeed {
-	f := &metricFeed{ctx: ctx, messages: make(chan tea.Msg, 4), remote: make(map[string]bool)}
+func startMetrics(parent context.Context, workers *sync.WaitGroup, lastClaude quotaReading, codexRefreshAfter time.Time) *metricFeed {
+	ctx, cancel := context.WithCancel(parent)
+	f := &metricFeed{ctx: ctx, cancel: cancel, messages: make(chan tea.Msg, 4), workers: workers, remote: make(map[string]bool)}
 	f.run(func() { f.cpu("local", nativeCPUTicks) })
 	f.run(func() {
-		var last quotaReading
+		last := lastClaude
 		for ctx.Err() == nil {
 			next := claudeQuota()
 			if next != last {
@@ -45,15 +55,37 @@ func startMetrics(ctx context.Context) *metricFeed {
 		}
 	})
 	f.run(func() {
+		if delay := time.Until(codexRefreshAfter); delay > 0 && !every(ctx, delay) {
+			return
+		}
 		for ctx.Err() == nil {
 			reading, err := codexQuota(ctx)
-			f.publish(codexUpdate{reading, err != nil})
-			if !every(ctx, 5*time.Minute) {
+			f.publish(codexUpdate{reading, err != nil, time.Now().Add(codexQuotaInterval)})
+			if !every(ctx, codexQuotaInterval) {
 				return
 			}
 		}
 	})
 	return f
+}
+
+func (m *model) syncMetrics() tea.Cmd {
+	visible := m.focusPreview && m.ctx != nil && !m.demo && !m.editing &&
+		m.page == listPage && m.focus != 0 && m.width >= 22 && m.height >= 10
+	if !visible {
+		if m.metrics != nil {
+			m.metrics.cancel()
+			m.metrics = nil
+		}
+		return nil
+	}
+	if m.metrics != nil {
+		return nil
+	}
+	clear(m.hostCPU)
+	m.metrics = startMetrics(m.ctx, &m.metricWorkers, m.claudeUsage, m.codexRefreshAfter)
+	m.metrics.addHosts(m.feed.Hosts)
+	return m.watchMetrics()
 }
 
 func (f *metricFeed) run(job func()) {

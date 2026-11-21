@@ -7,6 +7,7 @@ local excluded = args.sidebar_id or rex.block_id
 local sessions = {}
 local layouts, changes, titles = {}, {}, {}
 local topology, timer
+local attached_all = false
 
 local function read_status(session_id, block_id, pane)
   local status = rex.call(terminal .. ".program_status", {
@@ -26,7 +27,7 @@ local function read_title(session_id, block_id, pane)
 end
 
 local function load_layout(id, entry)
-  if fleet and not entry.attached then
+  if fleet and not attached_all and not entry.attached then
     local attached = rex.call("session.attach", { session_id = id })
     if not attached then
       entry.unavailable = true
@@ -66,9 +67,12 @@ local function load_layout(id, entry)
   entry.unavailable = false
 end
 
-local function load_sessions()
-  local list, err = rex.call("session.list", {})
-  if not list then error(err, 0) end
+local function load_sessions(list)
+  if not list then
+    local err
+    list, err = rex.call("session.list", {})
+    if not list then error(err, 0) end
+  end
   local current = {}
   for _, session in ipairs(list.sessions or {}) do
     local id = session.session_id
@@ -127,14 +131,83 @@ rex.on("session_view_changed", function(ctx)
     schedule()
   end
 end)
-local function changed(ctx)
-  if ctx.session_id and ctx.block_id and ctx.block_id ~= excluded then
-    changes[ctx.block_id] = ctx.session_id
-    schedule()
-  end
+local function descendant(inherited_id, parent_id)
+  return inherited_id ~= parent_id and
+    (parent_id == "" or inherited_id:sub(1, #parent_id + 1) == parent_id .. "/")
 end
-rex.on("terminal.program_status_changed", changed)
-rex.on("terminal.program_status_removed", changed)
+
+local function inherits_app(records, id)
+  for _, record in ipairs(records) do
+    if not record.app and descendant(record.id or "", id) then return true end
+  end
+  return false
+end
+
+local function update_record(records, ev)
+  local record = ev.record
+  if type(ev.id) ~= "string" or type(record) ~= "table" or
+      type(record.state) ~= "string" or type(record.updated_at) ~= "string" or
+      (record.id or "") ~= ev.id then
+    return false
+  end
+  for i, old in ipairs(records) do
+    if (old.id or "") == ev.id then
+      -- A parent's app change can affect children that did not report.
+      if old.app ~= record.app and inherits_app(records, ev.id) then return false end
+      records[i] = record
+      return true
+    end
+  end
+  if record.app and inherits_app(records, ev.id) then return false end
+  records[#records + 1] = record
+  return true
+end
+
+local function remove_records(records, ev)
+  if type(ev.ids) ~= "table" then return false end
+  local removed = {}
+  for _, id in ipairs(ev.ids) do
+    if type(id) ~= "string" then return false end
+    removed[id] = true
+  end
+  if not next(removed) then return false end
+  for _, record in ipairs(records) do
+    local id = record.id or ""
+    if not record.app and not removed[id] then
+      for parent in pairs(removed) do
+        if descendant(id, parent) then return false end
+      end
+    end
+  end
+  for i = #records, 1, -1 do
+    if removed[records[i].id or ""] then table.remove(records, i) end
+  end
+  return true
+end
+
+local function record_event(ctx, ev, apply)
+  if not ctx.session_id or not ctx.block_id or ctx.block_id == excluded then return end
+  local session = sessions[ctx.session_id]
+  local pane = session and session.panes[ctx.block_id]
+  if not pane then return end
+  if pane.unavailable or type(pane.records) ~= "table" or
+      (not changes[ctx.block_id] and not apply(pane.records, ev or {})) then
+    changes[ctx.block_id] = ctx.session_id
+  end
+  local record = ev and ev.record
+  if type(record) == "table" and type(record.updated_at) == "string" and
+      (record.state == "working" or record.state == "blocked" or record.state == "error") then
+    pane.activity_at = record.updated_at
+  end
+  schedule()
+end
+
+rex.on("terminal.program_status_changed", function(ctx, ev)
+  record_event(ctx, ev, update_record)
+end)
+rex.on("terminal.program_status_removed", function(ctx, ev)
+  record_event(ctx, ev, remove_records)
+end)
 
 if fleet then
   rex.on("terminal.title_changed", function(ctx)
@@ -155,7 +228,15 @@ if fleet then
       schedule()
     end
   end)
-  topology = true
+  -- --all selects the event scope. Explicitly attach before the first
+  -- session.view or terminal method, using the returned session list.
+  local initial = rex.call("session.attach_all", { event_scope = "all" })
+  attached_all = initial ~= nil
+  if attached_all then
+    load_sessions(initial)
+  else
+    topology = true
+  end
 else
   sessions[rex.session_id] = { panes = {}, windows = 0 }
   layouts[rex.session_id] = true

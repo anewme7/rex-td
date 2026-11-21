@@ -59,6 +59,13 @@ func (m *model) paneSceneView(width int) listView {
 	add("")
 	add(ink.Render(clip(m.paneDisplayTitle(pane), width)))
 	add(pair(dim.Render(m.paneLocation(pane)), m.status(state), width))
+	if pane, ok := m.sceneResult(); ok {
+		action := "标为已看"
+		if m.seenResults[identityOf(pane)].matches(pane) {
+			action = "撤销已看"
+		}
+		v.append(clip(accent.Render("y")+" "+m.text(action), width), listHit{action: "y"})
+	}
 	detail := scene.detail
 	if pane.App != scene.pane.App || offline || unavailable {
 		detail = agentDetail{}

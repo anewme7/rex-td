@@ -29,10 +29,10 @@ local function must(value, problem)
   return value
 end
 
-local function store(operation, request)
+local function store(operation, request, timeout)
   local argv = command("palette", operation)
   if request then argv[#argv + 1] = rex.json.encode(request) end
-  local result = must(rex.exec(argv, { timeout = 5 }))
+  local result = must(rex.exec(argv, { timeout = timeout or 5 }))
   if not result.ok then
     error((result.stderr or ""):gsub("%s+$", ""), 0)
   end
@@ -120,23 +120,21 @@ local function task_items(tasks)
   return items, indexed
 end
 
-local function live_targets(task)
-  local out, cached = {}, {}
-  for _, pane in ipairs(task.panes) do
-    if pane.host_id == "local" then
-      if cached[pane.session_id] == nil then cached[pane.session_id] = view_of(pane.session_id) or false end
-      local view = cached[pane.session_id]
-      local window, block = by_block(view, pane.block_id)
-      if window and block.creator_name == terminal then
-        out[#out + 1] = {
-          session_id = pane.session_id, window_id = window.window_id, block_id = pane.block_id,
-          title = block.label ~= "" and block.label or pane.title,
-          location = (view.label or "Rex") .. " · " .. (window.label or ""),
-        }
-      end
-    end
-  end
-  return out
+local reasons = {
+  host_unavailable = text("Host unreachable", "主机连不上"),
+  pane_closed = text("Pane closed", "窗格已关闭"),
+}
+
+local function remember(task, target, reason)
+  store("resume", { task_id = task.id, pane = target, reason = reason })
+end
+
+local function show_task(ctx, args, task, target, reason)
+  remember(task, target, reason)
+  local opened = open_board(ctx, args)
+  opened.task_id = task.id
+  opened.unavailable = reason
+  return opened
 end
 
 local function find_task(ctx, args)
@@ -149,32 +147,52 @@ local function find_task(ctx, args)
   if not id then return end
   local task = indexed[id]
   if not task then error(text("The task is no longer available", "任务已不存在，请重新查找"), 0) end
-  local targets = live_targets(task)
-  if args.inspect then return { title = task.title, targets = targets } end
-  if #targets == 0 then
-    local opened = open_board(ctx, args)
-    opened.task_id = task.id
-    return opened
+  local targets = store("targets", { task_id = task.id })
+  for _, target in ipairs(targets) do
+    local status = reasons[target.unavailable] or target.status
+    if status and status ~= "" then target.location = target.location .. " · " .. status end
   end
+  if args.inspect then return { title = task.title, targets = targets } end
+  if #targets == 0 then return show_task(ctx, args, task, nil, args.block_id and "link_missing" or nil) end
+
   local chosen
   if args.block_id then
     for _, target in ipairs(targets) do
-      if target.block_id == args.block_id then chosen = target end
+      if target.block_id == args.block_id and (not args.host_id or target.host_id == args.host_id) then
+        if chosen then return show_task(ctx, args, task, nil, "link_missing") end
+        chosen = target
+      end
     end
-    if not chosen then error(text("The selected pane is no longer available", "所选窗格已不可用"), 0) end
+    if not chosen then return show_task(ctx, args, task, nil, "link_missing") end
   elseif #targets == 1 then
     chosen = targets[1]
   else
-    local options, by_id = {}, {}
-    for _, target in ipairs(targets) do
-      options[#options + 1] = { id = target.block_id, title = target.title, subtitle = target.location, icon = "terminal" }
-      by_id[target.block_id] = target
+    local options = {}
+    for index, target in ipairs(targets) do
+      options[#options + 1] = { id = tostring(index), title = target.title, subtitle = target.location, icon = "terminal" }
     end
-    local block_id = rex.ui.pick{ title = task.title, placeholder = text("Choose a pane", "选择一个窗格"), items = options }
-    if not block_id then return end
-    chosen = by_id[block_id]
+    local selection = rex.ui.pick{ title = task.title, placeholder = text("Choose a pane", "选择一个窗格"), items = options }
+    if not selection then return end
+    chosen = targets[tonumber(selection)]
   end
-  local result = focus(ctx, chosen, args.select_window)
+  if not chosen then return end
+  if chosen.unavailable then return show_task(ctx, args, task, chosen, chosen.unavailable) end
+
+  remember(task, chosen)
+  local result
+  if chosen.host_id == "local" then
+    local ok, focused = pcall(focus, ctx, chosen, args.select_window)
+    if not ok then return show_task(ctx, args, task, chosen, "jump_failed") end
+    result = focused
+  else
+    local ok, jumped = pcall(store, "jump", {
+      task_id = task.id, pane = chosen,
+      origin_session = ctx.session_id, origin_block = ctx.block_id, client = ctx.client_id,
+    }, 15)
+    if not ok then return show_task(ctx, args, task, chosen, "jump_failed") end
+    if jumped.unavailable then return show_task(ctx, args, task, chosen, jumped.unavailable) end
+    result = jumped
+  end
   result.task_id = task.id
   return result
 end
@@ -223,9 +241,9 @@ end
 
 rex.action{
   name = "rextd_preview_open",
-  title = text("rextd / Open Task Board", "rextd / 打开任务看板"),
-  category = "rextd",
-  keywords = "tasks board focus 任务 看板 回到侧栏",
+  title = text("td / Open Task Board", "td / 打开任务看板"),
+  category = "td",
+  keywords = "rextd tasks board focus 任务 看板 回到侧栏",
   description = text("Open or focus the task board.", "打开或聚焦右侧任务看板。"),
   args = { select_window = "boolean?" },
   run = open_board,
@@ -233,19 +251,19 @@ rex.action{
 
 rex.action{
   name = "rextd_preview_find",
-  title = text("rextd / Find Task…", "rextd / 查找任务…"),
-  category = "rextd",
-  keywords = "task find search jump 找任务 跳转",
-  description = text("Find a task and jump to a linked pane on this Rex host.", "按任务名称找到已关联的本机窗格。"),
-  args = { task_id = "integer?", block_id = "string?", inspect = "boolean?", select_window = "boolean?" },
+  title = text("td / Find Task…", "td / 查找任务…"),
+  category = "td",
+  keywords = "rextd task find search jump 找任务 跳转",
+  description = text("Find a task and jump to a linked Rex pane.", "按任务名称查找并跳转到关联窗格。"),
+  args = { task_id = "integer?", block_id = "string?", host_id = "string?", inspect = "boolean?", select_window = "boolean?" },
   run = find_task,
 }
 
 rex.action{
   name = "rextd_preview_capture",
-  title = text("rextd / Capture Current Pane…", "rextd / 收录当前窗格…"),
-  category = "rextd",
-  keywords = "task capture link 新建 任务 关联 收录",
+  title = text("td / Capture Current Pane…", "td / 收录当前窗格…"),
+  category = "td",
+  keywords = "rextd task capture link 新建 任务 关联 收录",
   description = text("Link the current pane to a task.", "把当前窗格添到任务库。"),
   args = { task_id = "integer?", title = "string?", inspect = "boolean?" },
   run = capture,

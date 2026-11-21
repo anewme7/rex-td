@@ -41,8 +41,8 @@ type captureRequest struct {
 }
 
 func palette(args []string) error {
-	if len(args) == 0 || (args[0] != "list" && args[0] != "capture") {
-		return paletteError("specify list or capture", "需要指定 list 或 capture")
+	if len(args) == 0 {
+		return paletteError("specify a palette command", "需要指定命令面板操作")
 	}
 	path, err := taskDBPath()
 	if err != nil {
@@ -67,6 +67,9 @@ func palette(args []string) error {
 			return err
 		}
 		return encode.Encode(map[string]int64{"task_id": taskID})
+	}
+	if args[0] != "list" {
+		return handlePaletteNavigation(store, encode, args)
 	}
 	if len(args) != 1 {
 		return paletteError("list accepts no additional arguments", "list 不接受额外参数")
@@ -167,6 +170,11 @@ func (m *model) refreshPaletteStore() {
 		return
 	}
 
+	seen, err := m.store.loadSeenResults()
+	if err != nil {
+		return
+	}
+
 	selected := m.selected()
 	var selectedPane paneIdentity
 	if selected != nil && m.detailSelection >= 0 && m.detailSelection < len(selected.panes) {
@@ -198,7 +206,11 @@ func (m *model) refreshPaletteStore() {
 		m.detailSelection = clamp(m.detailSelection, 0, len(task.panes)-1)
 	}
 	m.paletteStoreVersion = version
+	m.seenResults = seen
+	m.pruneSeenResults()
+	m.refreshPanes()
 	m.refreshCandidates()
+	m.paletteResume, _ = m.store.readPaletteResume()
 }
 
 func paletteError(en, zh string) error {

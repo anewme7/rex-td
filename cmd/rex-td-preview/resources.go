@@ -119,7 +119,7 @@ func (m *model) hostRows(width, limit int, exact bool) []string {
 	badgeWidth := 4
 	if !exact {
 		for _, pane := range m.feed.Panes {
-			if pane.NeedsAttention() {
+			if m.isAlert(pane) {
 				reminders[pane.Host.ID]++
 			}
 		}

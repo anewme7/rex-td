@@ -508,7 +508,7 @@ func (m *model) help(w int) []string {
 		clip(m.text("机器区回车 筛选    g 全部机器"), w),
 		clip(m.text("Alt+1 到 9 筛选主机    Alt+0 全部机器"), w),
 		clip(m.text("窗格回车 跳转    l 关联选中任务"), w),
-		clip(m.text("窗格详情 d 发现 · w 观察"), w),
+		clip(m.text("窗格详情 d 发现 · w 观察 · y 已看"), w),
 		clip(m.text("o 详情    n 需要处理    q 退出"), w),
 		clip(m.text("点击页签、组标题或底栏操作"), w),
 		"", dim.Render(clip(m.storageLabel(), w)),

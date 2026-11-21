@@ -190,18 +190,10 @@ func (m *model) urgentTaskPane(t *task) (rex.Pane, bool) {
 	choose := func(current *task) {
 		for _, linked := range current.panes {
 			p := m.currentPane(linked)
-			if m.feed.HostState(p.Host.ID) == rex.Offline {
+			if !m.isAlert(p) {
 				continue
 			}
-			rank := 0
-			switch p.Status {
-			case "permission", "question", "auth":
-				rank = 3
-			case "error", "waiting":
-				rank = 2
-			case "done":
-				rank = 1
-			}
+			rank := p.AttentionPriority()
 			if rank > priority {
 				priority, pane = rank, p
 			}

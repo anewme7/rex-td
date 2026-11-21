@@ -10,11 +10,15 @@ import (
 
 type layout struct {
 	SessionID string `json:"session_id"`
+	Label     string
 	Windows   []struct {
 		ID     string `json:"window_id"`
+		Label  string
 		Layers []struct {
 			Blocks []struct {
 				Owner   string
+				Label   string
+				Creator string `json:"creator_name"`
 				BlockID string `json:"block_id"`
 			}
 		}
@@ -96,7 +100,7 @@ func clientOnHost(ctx context.Context, sourceID string, host Host) (string, erro
 		return "", fmt.Errorf("当前 Rex 应用需要客户端标签才能匹配远端设备")
 	}
 	for _, c := range source {
-		if c.ID != sourceID && c.Info.Kind == "app" && c.Info.Label == label && c.State != "disconnected" {
+		if c.ID != sourceID && c.Info.Kind == "app" && c.Info.Label == label && c.State != "lost" && c.State != "disconnected" {
 			return "", fmt.Errorf("本机有多个同名 Rex 应用，请给当前设备使用独立标签")
 		}
 	}
@@ -106,7 +110,7 @@ func clientOnHost(ctx context.Context, sourceID string, host Host) (string, erro
 	}
 	var chosen string
 	for _, c := range target {
-		if c.Info.Kind != "app" || c.Info.Label != label || c.State == "disconnected" {
+		if c.Info.Kind != "app" || c.Info.Label != label || c.State == "lost" || c.State == "disconnected" {
 			continue
 		}
 		if chosen != "" {
@@ -123,6 +127,11 @@ func clientOnHost(ctx context.Context, sourceID string, host Host) (string, erro
 // Focus locates the current placement before acting. It focuses the exact
 // block on its Rex server, then selects the tab on the initiating application.
 func (c Context) Focus(parent context.Context, target Pane) error {
+	return c.FocusFrom(parent, target, os.Getenv("REX_CLIENT"))
+}
+
+// FocusFrom uses the Rex client that initiated a palette action as the origin.
+func (c Context) FocusFrom(parent context.Context, target Pane, sourceClient string) error {
 	if !c.Inside() || target.ID == "" || target.SessionID == "" || target.Host.ID == "" {
 		return fmt.Errorf("缺少 Rex 窗格位置")
 	}
@@ -151,7 +160,7 @@ func (c Context) Focus(parent context.Context, target Pane) error {
 	}
 
 	needsSelect := !sameSession || window != originWindow
-	client := first(os.Getenv("REX_CLIENT"), owner)
+	client := first(sourceClient, owner)
 	if needsSelect && client == "" {
 		return fmt.Errorf("Rex 未提供当前应用的客户端标识")
 	}

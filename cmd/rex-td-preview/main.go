@@ -94,7 +94,13 @@ func run(demo bool, uiLanguage language) error {
 			return err
 		}
 		m.selectVisibleTask()
+		m.paletteResume, _ = m.store.readPaletteResume()
+		m.applyPaletteResume()
 		m.candidateIgnored, err = m.store.loadCandidateIgnores()
+		if err != nil {
+			return err
+		}
+		m.seenResults, err = m.store.loadSeenResults()
 		if err != nil {
 			return err
 		}
@@ -104,9 +110,7 @@ func run(demo bool, uiLanguage language) error {
 		}
 		defer func() {
 			cancel()
-			if m.metrics != nil {
-				m.metrics.workers.Wait()
-			}
+			m.metricWorkers.Wait()
 		}()
 	}
 	c := rex.Current()

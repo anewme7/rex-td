@@ -35,10 +35,10 @@ end
 
 rex.action({
   name = "rextd_show_host",
-  title = text("rextd / Show Host 1", "rextd / 显示 1 号主机"),
+  title = text("td / Show Host 1", "td / 显示 1 号主机"),
   description = text("Focus rextd in this Rex window and filter Attention by host number", "聚焦当前窗口的 rextd，按主机编号筛选需要处理列表"),
-  category = "rextd",
-  keywords = "tasks sidebar host filter 任务 侧栏 主机 筛选",
+  category = "td",
+  keywords = "rextd tasks sidebar host filter 任务 侧栏 主机 筛选",
   args = { slot = "integer?" },
   run = function(ctx, args)
     local slot = args.slot or 1

@@ -4,6 +4,8 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -66,6 +68,8 @@ const (
 
 type model struct {
 	paletteStoreVersion     int64
+	paletteResume           paletteResume
+	paletteResumeApplied    int64
 	archivedView            bool
 	menuBack                page
 	menuSelection           int
@@ -86,6 +90,7 @@ type model struct {
 	grouping                grouping
 	allPanes                bool
 	panePins                map[paneIdentity]bool
+	seenResults             map[paneIdentity]seenResult
 	foldedTasks             map[string]bool
 	foldedPanes             map[string]bool
 	density                 int
@@ -110,6 +115,8 @@ type model struct {
 	ctx                     context.Context
 	rexContext              rex.Context
 	metrics                 *metricFeed
+	metricWorkers           sync.WaitGroup
+	codexRefreshAfter       time.Time
 	hostCPU                 map[string]*int
 	claudeUsage, codexUsage quotaReading
 	claudeLimit             quotaReading
@@ -130,7 +137,8 @@ type model struct {
 func newModel(demo bool) *model {
 	m := &model{demo: demo, language: chinese, expanded: make(map[*task]bool), panePins: make(map[paneIdentity]bool),
 		foldedTasks: make(map[string]bool), foldedPanes: make(map[string]bool),
-		hostCPU: make(map[string]*int), density: 1,
+		seenResults: make(map[paneIdentity]seenResult),
+		hostCPU:     make(map[string]*int), density: 1,
 		candidateRequests: make(map[paneIdentity]string), candidateIgnored: make(map[paneIdentity]string),
 		candidateWatches: make(map[paneIdentity]bool)}
 	if demo {
@@ -155,7 +163,7 @@ func (m *model) watchMetrics() tea.Cmd {
 	return func() tea.Msg {
 		select {
 		case event := <-f.messages:
-			return event
+			return metricEvent{feed: f, value: event}
 		case <-f.ctx.Done():
 			return nil
 		}
@@ -178,9 +186,21 @@ func (m *model) watch() tea.Cmd {
 type jumpResult struct{ err error }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	return next, tea.Batch(cmd, m.syncMetrics())
+}
+
+func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if event, ok := msg.(metricEvent); ok {
+		if event.feed != m.metrics {
+			return m, nil
+		}
+		msg = event.value
+	}
 	switch msg := msg.(type) {
 	case paletteStoreTick:
 		m.refreshPaletteStore()
+		m.applyPaletteResume()
 		return m, m.watchPaletteStore()
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -197,6 +217,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.feed = msg
+		m.pruneSeenResults()
 		if target != (paneIdentity{}) {
 			m.pickerSelection = slices.IndexFunc(m.pickable(), func(p rex.Pane) bool { return identityOf(p) == target })
 			if m.pickerSelection < 0 {
@@ -217,6 +238,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.claudeUsage = msg.reading
 		return m, m.watchMetrics()
 	case codexUpdate:
+		m.codexRefreshAfter = msg.refreshAfter
 		m.codexFailed = msg.failed
 		if !msg.failed {
 			m.codexUsage = msg.reading
@@ -280,6 +302,9 @@ func (m *model) listCommand(key string) tea.Cmd {
 			m.scene.editing, m.scene.input = true, m.scene.binding.id
 			m.notice = ""
 			return nil
+		case key == "y":
+			m.toggleSeenResult()
+			return nil
 		case key == "m":
 			m.scene.more, m.scene.offset = !m.scene.more, 0
 			return nil
@@ -325,12 +350,6 @@ func (m *model) listCommand(key string) tea.Cmd {
 		if m.page == listPage && !m.attention && key == "a" {
 			m.focusBrowse()
 			return nil
-		}
-		if m.page == listPage && key == "f" && m.metrics == nil && !m.demo && m.ctx != nil {
-			m.metrics = startMetrics(m.ctx)
-			m.metrics.addHosts(m.feed.Hosts)
-			m.handle(key)
-			return m.watchMetrics()
 		}
 		if m.page == listPage && !m.attention && key == "enter" && m.focus == 0 {
 			if t := m.selected(); t != nil && len(t.panes) != 1 {
@@ -748,7 +767,8 @@ func (m *model) inHostScope(p rex.Pane) bool {
 }
 
 func (m *model) isAlert(p rex.Pane) bool {
-	return p.NeedsAttention() && m.feed.HostState(p.Host.ID) != rex.Offline
+	return p.NeedsAttention() && m.feed.HostState(p.Host.ID) != rex.Offline &&
+		!m.seenResults[identityOf(p)].matches(p)
 }
 
 func (m *model) alertCount() int {

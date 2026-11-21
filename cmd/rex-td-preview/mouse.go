@@ -64,6 +64,9 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		if m.page == scenePage && msg.Y == m.height-1 {
 			return m.listCommand([...]string{"enter", "d", "w", "esc"}[m.shortcutAt(msg.X, 4)])
 		}
+		if m.page == scenePage && row >= 0 && row < len(m.mouseRows) && m.mouseRows[row].action == "y" {
+			return m.listCommand("y")
+		}
 		if m.page != listPage {
 			return nil
 		}

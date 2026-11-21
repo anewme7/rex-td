@@ -116,6 +116,14 @@ func (s *taskStore) initialize(path string) error {
 
 const taskSchema = `CREATE TABLE IF NOT EXISTS task(id INTEGER PRIMARY KEY, title TEXT NOT NULL, state TEXT NOT NULL,
     note TEXT NOT NULL DEFAULT '', review INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS palette_resume(
+    slot INTEGER PRIMARY KEY CHECK(slot=1), revision INTEGER NOT NULL,
+    task INTEGER NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+    host_id TEXT NOT NULL, session_id TEXT NOT NULL, block_id TEXT NOT NULL, reason TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS seen_pane_result(
+    host_id TEXT NOT NULL, session_id TEXT NOT NULL, block_id TEXT NOT NULL,
+    fingerprint TEXT NOT NULL, reported_at INTEGER NOT NULL,
+    PRIMARY KEY(host_id, session_id, block_id)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS task_pin(task INTEGER PRIMARY KEY REFERENCES task(id));
 CREATE TABLE IF NOT EXISTS task_color(task INTEGER PRIMARY KEY REFERENCES task(id), color TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS task_kind(task INTEGER PRIMARY KEY REFERENCES task(id) ON DELETE CASCADE, kind INTEGER NOT NULL);
